@@ -58,7 +58,7 @@ func (g *Gamepad) checkMonitorEvent(d *udev.Device) {
 		return
 	}
 
-	if !matchDevice(g.device, d) {
+	if !MatchDevice(g.device, d) {
 		log.Printf("Not matching\n", d)
 		return
 	}
@@ -80,7 +80,7 @@ func (g *Gamepad) run() {
 	}
 }
 
-func matchDevice(a *udev.Device, b *udev.Device) bool {
+func MatchDevice(a *udev.Device, b *udev.Device) bool {
 	if a.Subsystem() != "hid" {
 		return false
 	}
@@ -108,7 +108,7 @@ func (g *Gamepad) initUdev() error {
 
 	g.udev = &udev.Udev{}
 	g.device = g.udev.NewDeviceFromSyspath(g.sysdir)
-	if g.device == nil || !matchDevice(g.device, nil) {
+	if g.device == nil || !MatchDevice(g.device, nil) {
 		return fmt.Errorf("Couldn't get device '%s'", g.sysdir)
 	}
 
