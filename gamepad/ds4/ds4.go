@@ -11,6 +11,7 @@ import (
 type subscriber struct {
 	id int
 	stop <-chan bool
+	die chan bool
 	events chan evdev.InputEvent
 }
 
@@ -53,8 +54,11 @@ func (g *Gamepad) addSubscriber(s *subscriber) {
 
 	g.subs[s.id] = s
 	go func(s *subscriber) {
-		<-s.stop
-		g.stopChan <-s.id
+		select {
+		case <-s.stop:
+		case <-s.die:
+			g.stopChan <-s.id
+		}
 	}(s)
 }
 
@@ -67,23 +71,59 @@ func (g *Gamepad) removeSubscriber(id int) {
 	}
 
 	delete(g.subs, id)
+	close(s.die)
 	close(s.events)
 }
 
-func (g *Gamepad) checkMonitorEvent(d *udev.Device) {
+func (g *Gamepad) checkDeviceRemoved(d *udev.Device) bool {
 	log.Printf("Monitor event. %v\n", d)
 
 	if d.Action() != "remove" {
-		log.Printf("Not remove\n", d)
-		return
+		log.Printf("Not remove %v\n", d)
+		return false
 	}
 
 	if !MatchDevice(g.device, d) {
-		log.Printf("Not matching\n", d)
-		return
+		log.Printf("Not matching %v\n", d)
+		return false
 	}
 
 	log.Printf("Device %s went away\n", g.sysdir)
+	return true
+}
+
+func (g *Gamepad) stop() {
+	g.monitorStop <-struct {}{}
+	for _ = range g.monitorChan { }
+
+	// Kill off all the subscriber stop threads
+	go func() {
+		for _, s := range g.subs {
+			s.die <-true
+		}
+	}()
+
+	// Remove each subscriber as its stop thread dies
+	for {
+		id := <-g.stopChan
+		g.removeSubscriber(id)
+
+		if len(g.subs) == 0 {
+			break
+		}
+	}
+	close(g.stopChan)
+
+	// FIXME: There's a race on this if someone subscribes at the same time
+	// Drop any subscribers we didn't actually add yet
+	select {
+	case s := <-g.subChan:
+		close(s.die)
+		close(s.events)
+	default:
+		break
+	}
+	close(g.subChan)
 }
 
 func (g *Gamepad) run() {
@@ -95,7 +135,10 @@ func (g *Gamepad) run() {
 		case i := <-g.stopChan:
 			g.removeSubscriber(i)
 		case d := <-g.monitorChan:
-			g.checkMonitorEvent(d)
+			if g.checkDeviceRemoved(d) {
+				g.stop()
+				return
+			}
 		}
 	}
 }
@@ -171,6 +214,7 @@ func (g *Gamepad) Subscribe(stop <-chan bool) <-chan evdev.InputEvent {
 	s := subscriber{
 		id: g.subid,
 		stop: stop,
+		die: make(chan bool),
 		// TODO: A subscriber must never be allowed to block the main
 		// event thread
 		events: make(chan evdev.InputEvent, 10),
