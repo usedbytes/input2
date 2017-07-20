@@ -5,12 +5,32 @@ import (
 	"log"
 	"github.com/gvalkov/golang-evdev"
 	"github.com/jochenvg/go-udev"
+	"github.com/usedbytes/input2"
 )
 
 type subscriber struct {
 	id int
 	stop <-chan bool
 	events chan evdev.InputEvent
+}
+
+const driverName = "DualShock 4"
+type Driver struct { }
+
+func (d Driver) Name() string {
+	return driverName
+}
+
+func (d Driver) MatchDevice(a *udev.Device) bool {
+	return MatchDevice(a, nil)
+}
+
+func (d Driver) CompareDevices(b *udev.Device, a *udev.Device) bool {
+	return MatchDevice(a, b)
+}
+
+func (d Driver) Bind(syspath string) input2.Source {
+	return NewGamepad(syspath)
 }
 
 type Gamepad struct {
@@ -147,7 +167,7 @@ func NewGamepad(sysdir string) *Gamepad {
 	return g
 }
 
-func (g *Gamepad) Subscribe(stop <-chan bool) chan evdev.InputEvent {
+func (g *Gamepad) Subscribe(stop <-chan bool) <-chan evdev.InputEvent {
 	s := subscriber{
 		id: g.subid,
 		stop: stop,
