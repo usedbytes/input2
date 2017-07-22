@@ -3,11 +3,17 @@ package ds4
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sync"
+	"time"
 	"github.com/gvalkov/golang-evdev"
 	"github.com/jochenvg/go-udev"
 	"github.com/usedbytes/input2"
 )
+
+var mainDevRegexp = regexp.MustCompile("Wireless Controller$")
 
 type subscriber struct {
 	id int
@@ -40,6 +46,7 @@ type Gamepad struct {
 	sysdir string
 	mutex sync.Mutex
 	stopped bool
+	evdev *evdev.InputDevice
 
 	udev *udev.Udev
 	device *udev.Device
@@ -132,14 +139,43 @@ func (g *Gamepad) stop() {
 	close(g.subChan)
 }
 
+func (g *Gamepad) runDevice(evchan chan<- []evdev.InputEvent) {
+	for {
+		evs, err := g.evdev.Read()
+		if err != nil {
+			// TODO: We should communicate the error to subscribers
+			if pe, ok := err.(*os.PathError); ok {
+				log.Printf("Device Error: %s %d\n", pe.Path, pe.Err)
+				return
+			} else {
+				panic(fmt.Sprintf("Unexpected error: %s\n", err))
+			}
+		}
+		evchan <- evs
+	}
+}
+
 func (g *Gamepad) run() {
 	log.Printf("Running...\n")
+	evchan := make(chan []evdev.InputEvent, 10)
+	go g.runDevice(evchan)
 	for {
 		select {
 		case s := <-g.subChan:
 			g.addSubscriber(s)
 		case i := <-g.stopChan:
 			g.removeSubscriber(i)
+		case evs := <-evchan:
+			for _, s := range g.subs {
+				// Non-blocking send. Receivers who don't listen
+				// get dropped!
+				for _, e := range evs {
+					select {
+					case s.events <- e:
+					default:
+					}
+				}
+			}
 		case d := <-g.monitorChan:
 			if g.checkDeviceRemoved(d) {
 				g.stop()
@@ -195,6 +231,37 @@ func (g *Gamepad) initUdev() error {
 	return nil
 }
 
+func (g *Gamepad) initEvdev() error {
+	// Wait for all the children to get probed
+	// FIXME: Be more clever
+	// To use udev we'd need to monitor _and_ enumerate which seems silly
+	time.Sleep(2 * time.Second)
+
+	events, err :=	filepath.Glob(g.sysdir + "/input/*/event*")
+	if err != nil {
+		return err
+	}
+	if len(events) == 0 {
+		return fmt.Errorf("Device has no input devices")
+	}
+
+	for _, p := range events {
+		devnode := "/dev/input/" + filepath.Base(p)
+		evdev, err := evdev.Open(devnode)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		if mainDevRegexp.Match([]byte(evdev.Name)) {
+			g.evdev = evdev
+			return nil
+		}
+		evdev.File.Close()
+	}
+
+	return fmt.Errorf("Couldn't find event device")
+}
+
 func NewGamepad(sysdir string) *Gamepad {
 	log.Printf("Gamepad %s\n", sysdir)
 	g := &Gamepad {
@@ -206,6 +273,12 @@ func NewGamepad(sysdir string) *Gamepad {
 	}
 
 	err := g.initUdev()
+	if err != nil {
+		log.Print(err)
+		return nil
+	}
+
+	err = g.initEvdev()
 	if err != nil {
 		log.Print(err)
 		return nil
