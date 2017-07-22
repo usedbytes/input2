@@ -3,6 +3,7 @@ package ds4
 import (
 	"fmt"
 	"log"
+	"sync"
 	"github.com/gvalkov/golang-evdev"
 	"github.com/jochenvg/go-udev"
 	"github.com/usedbytes/input2"
@@ -37,6 +38,8 @@ func (d Driver) Bind(syspath string) input2.Source {
 type Gamepad struct {
 	subid int
 	sysdir string
+	mutex sync.Mutex
+	stopped bool
 
 	udev *udev.Udev
 	device *udev.Device
@@ -105,24 +108,27 @@ func (g *Gamepad) stop() {
 
 	// Remove each subscriber as its stop thread dies
 	for {
-		id := <-g.stopChan
-		g.removeSubscriber(id)
-
 		if len(g.subs) == 0 {
 			break
 		}
+
+		id := <-g.stopChan
+		g.removeSubscriber(id)
 	}
 	close(g.stopChan)
 
-	// FIXME: There's a race on this if someone subscribes at the same time
-	// Drop any subscribers we didn't actually add yet
-	select {
-	case s := <-g.subChan:
-		close(s.die)
-		close(s.events)
-	default:
-		break
-	}
+	// Keep closing any incoming subscribers until someone closes the
+	// channel
+	go func() {
+		for s := range g.subChan {
+			close(s.die)
+			close(s.events)
+		}
+	}()
+
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	g.stopped = true
 	close(g.subChan)
 }
 
@@ -218,6 +224,12 @@ func (g *Gamepad) Subscribe(stop <-chan bool) <-chan evdev.InputEvent {
 		// TODO: A subscriber must never be allowed to block the main
 		// event thread
 		events: make(chan evdev.InputEvent, 10),
+	}
+
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	if g.stopped {
+		return nil
 	}
 
 	g.subChan <- &s
