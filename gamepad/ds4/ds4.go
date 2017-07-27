@@ -11,6 +11,7 @@ import (
 	"github.com/gvalkov/golang-evdev"
 	"github.com/jochenvg/go-udev"
 	"github.com/usedbytes/input2"
+	"github.com/usedbytes/input2/gamepad"
 )
 
 var mainDevRegexp = regexp.MustCompile("Wireless Controller$")
@@ -310,3 +311,29 @@ func (g *Gamepad) Subscribe(stop <-chan bool) <-chan evdev.InputEvent {
 
 	return s.events
 }
+
+type RumbleEffect evdev.FFEffect
+
+func(g *Gamepad) CreateRumbleEffect(strongMag, weakMag float32, duration time.Duration) (gamepad.RumbleEffect, error) {
+	effect, err := g.evdev.CreateFFRumbleEffect(strongMag, weakMag, duration)
+	if err != nil {
+		return nil, err
+	}
+
+	return effect, nil
+}
+
+/*
+func (r RumbleEffect) Play() {
+	r.Play()
+}
+func (r RumbleEffect) Stop() {
+	r.dev.StopFFEffect(r.effect)
+}
+func (r RumbleEffect) Delete() {
+	err := r.dev.DeleteFFEffect(r.effect)
+	if err != nil {
+		log.Printf("Couldn't delete effect %d\n", r.effect)
+	}
+}
+*/
