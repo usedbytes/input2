@@ -291,8 +291,6 @@ func (g *Gamepad) Subscribe(stop <-chan bool) <-chan evdev.InputEvent {
 		id: g.subid,
 		stop: stop,
 		die: make(chan bool),
-		// TODO: A subscriber must never be allowed to block the main
-		// event thread
 		events: make(chan evdev.InputEvent, 10),
 	}
 
