@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"sync"
+	"strings"
 	"time"
 	"github.com/gvalkov/golang-evdev"
 	"github.com/jochenvg/go-udev"
 	"github.com/usedbytes/input2"
 	"github.com/usedbytes/input2/gamepad"
+	"github.com/usedbytes/linux-led"
 )
 
 var mainDevRegexp = regexp.MustCompile("Wireless Controller$")
@@ -58,6 +60,8 @@ type Gamepad struct {
 	subs map[int]*subscriber
 	subChan chan *subscriber
 	stopChan chan int
+
+	led led.RGBLED
 }
 
 func (g *Gamepad) addSubscriber(s *subscriber) {
@@ -254,6 +258,46 @@ func (g *Gamepad) initEvdev() error {
 	return fmt.Errorf("Couldn't find event device")
 }
 
+func (g *Gamepad) initLeds() error {
+	var red, green, blue, global string
+	leds, err := filepath.Glob(g.sysdir + "/leds/*")
+	if err != nil {
+		return err
+	}
+	if len(leds) != 4 {
+		return fmt.Errorf("Expected 4 LEDs")
+	}
+
+	for _, l := range leds {
+		if strings.HasSuffix(l, ":red") {
+			red = l
+			continue
+		}
+		if strings.HasSuffix(l, ":green") {
+			green = l
+			continue
+		}
+		if strings.HasSuffix(l, ":blue") {
+			blue = l
+			continue
+		}
+		if strings.HasSuffix(l, ":global") {
+			global = l
+			continue
+		}
+	}
+	if red == "" || green == "" || blue == "" || global == "" {
+		return fmt.Errorf("Couldn't match LED names")
+	}
+
+	g.led, err = led.NewRGBLED(red, green, blue, global)
+	if (err != nil) {
+		return fmt.Errorf("Couldn't get leds: %s\n", err.Error())
+	}
+
+	return nil
+}
+
 func NewGamepad(sysdir string) *Gamepad {
 	log.Printf("Gamepad %s\n", sysdir)
 	g := &Gamepad {
@@ -276,6 +320,12 @@ func NewGamepad(sysdir string) *Gamepad {
 	time.Sleep(1 * time.Second)
 
 	err = g.initEvdev()
+	if err != nil {
+		log.Print(err)
+		return nil
+	}
+
+	err = g.initLeds()
 	if err != nil {
 		log.Print(err)
 		return nil
@@ -315,3 +365,6 @@ func (g *Gamepad) CreateRumbleEffect(strongMag, weakMag float32, duration time.D
 	return effect, nil
 }
 
+func (g *Gamepad) GetLED() led.LinuxLED {
+	return g.led
+}
