@@ -229,11 +229,6 @@ func (g *Gamepad) initUdev() error {
 }
 
 func (g *Gamepad) initEvdev() error {
-	// Wait for all the children to get probed
-	// FIXME: Be more clever
-	// To use udev we'd need to monitor _and_ enumerate which seems silly
-	time.Sleep(2 * time.Second)
-
 	events, err :=	filepath.Glob(g.sysdir + "/input/*/event*")
 	if err != nil {
 		return err
@@ -274,6 +269,11 @@ func NewGamepad(sysdir string) *Gamepad {
 		log.Print(err)
 		return nil
 	}
+
+	// Wait for all the children to get probed
+	// FIXME: Be more clever
+	// To use udev we'd need to monitor _and_ enumerate which seems silly
+	time.Sleep(1 * time.Second)
 
 	err = g.initEvdev()
 	if err != nil {
