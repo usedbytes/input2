@@ -87,15 +87,11 @@ func (g *Gamepad) removeSubscriber(id int) {
 }
 
 func (g *Gamepad) checkDeviceRemoved(d *udev.Device) bool {
-	log.Printf("Monitor event. %v\n", d)
-
 	if d.Action() != "remove" {
-		log.Printf("Not remove %v\n", d)
 		return false
 	}
 
 	if !MatchDevice(g.device, d) {
-		log.Printf("Not matching %v\n", d)
 		return false
 	}
 
