@@ -5,8 +5,11 @@ import (
 	"github.com/gvalkov/golang-evdev"
 )
 
+type RawEvent evdev.InputEvent
+type InputEvent interface{}
+
 type Source interface {
-	Subscribe(stop <-chan bool) <-chan evdev.InputEvent
+	Subscribe(stop <-chan bool) <-chan InputEvent
 }
 
 type Driver interface {

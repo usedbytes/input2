@@ -23,7 +23,7 @@ type subscriber struct {
 	id int
 	stop <-chan bool
 	die chan bool
-	events chan evdev.InputEvent
+	events chan input2.InputEvent
 }
 
 const driverName = "DualShock 4"
@@ -360,12 +360,12 @@ func NewGamepad(sysdir string) *Gamepad {
 	return g
 }
 
-func (g *Gamepad) Subscribe(stop <-chan bool) <-chan evdev.InputEvent {
+func (g *Gamepad) Subscribe(stop <-chan bool) <-chan input2.InputEvent {
 	s := subscriber{
 		id: g.subid,
 		stop: stop,
 		die: make(chan bool),
-		events: make(chan evdev.InputEvent, 10),
+		events: make(chan input2.InputEvent, 10),
 	}
 
 	g.mutex.Lock()
