@@ -2,6 +2,7 @@ package ds4
 
 import (
 	"fmt"
+	"image/color"
 	"log"
 	"os"
 	"path/filepath"
@@ -393,6 +394,34 @@ func (g *Gamepad) GetLED() led.LinuxLED {
 	return g.led
 }
 
+func (g *Gamepad) SetColor(color color.Color) error {
+	return g.led.SetColor(color)
+}
+
+func (g *Gamepad) SetBrightness(brightness float32) error {
+	return g.led.SetBrightness(brightness)
+}
+
+func (g *Gamepad) Off() error {
+	return g.led.Off()
+}
+
+func (g *Gamepad) SetTrigger(trigger led.Trigger) error {
+	return g.led.SetTrigger(trigger)
+}
+
+func (g *Gamepad) GetTrigger() led.Trigger {
+	return g.led.GetTrigger()
+}
+
 func (g *Gamepad) GetBattery() battery.Battery {
 	return g.battery
+}
+
+func (g *Gamepad) Charge() float32 {
+	return g.battery.Charge()
+}
+
+func (g *Gamepad) Status() battery.Status {
+	return g.battery.Status()
 }
