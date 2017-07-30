@@ -63,6 +63,8 @@ type Gamepad struct {
 	subChan chan *subscriber
 	stopChan chan int
 
+	filters []*input2.EventFilter
+
 	led led.RGBLED
 	battery battery.Battery
 }
@@ -170,12 +172,26 @@ func (g *Gamepad) run() {
 		case i := <-g.stopChan:
 			g.removeSubscriber(i)
 		case evs := <-evchan:
-			for _, s := range g.subs {
-				// Non-blocking send. Receivers who don't listen
-				// get dropped!
-				for _, e := range evs {
+			for _, e := range evs {
+				var ev input2.InputEvent
+				var done bool
+				for _, f := range g.filters {
+					if (f.Match.TypeMask & (1 << uint32(e.Type))) == 0 {
+						continue
+					}
+					ev, done = f.Filter(&e)
+					if done {
+						break
+					}
+				}
+				if ev == nil {
+					continue
+				}
+				for _, s := range g.subs {
+					// Non-blocking send. Receivers who don't listen
+					// get dropped!
 					select {
-					case s.events <- e:
+					case s.events <- ev:
 					default:
 					}
 				}
@@ -325,6 +341,7 @@ func NewGamepad(sysdir string) *Gamepad {
 		subs: make(map[int]*subscriber),
 		subChan: make(chan *subscriber),
 		stopChan: make(chan int, 5),
+		filters: make([]*input2.EventFilter, 0),
 	}
 
 	err := g.initUdev()
@@ -379,6 +396,10 @@ func (g *Gamepad) Subscribe(stop <-chan bool) <-chan input2.InputEvent {
 	g.subid++
 
 	return s.events
+}
+
+func (g *Gamepad) AddFilter(filter *input2.EventFilter) {
+	g.filters = append(g.filters, filter)
 }
 
 func (g *Gamepad) CreateRumbleEffect(strongMag, weakMag float32, duration time.Duration) (gamepad.RumbleEffect, error) {
