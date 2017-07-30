@@ -3,10 +3,12 @@ package gamepad
 import (
 	"time"
 	"github.com/usedbytes/linux-led"
+	"github.com/usedbytes/battery"
 )
 
 type Gamepad interface {
 	GetLED() led.LinuxLED
+	GetBattery() battery.Battery
 }
 
 type Rumbler interface {

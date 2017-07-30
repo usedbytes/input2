@@ -14,6 +14,7 @@ import (
 	"github.com/usedbytes/input2"
 	"github.com/usedbytes/input2/gamepad"
 	"github.com/usedbytes/linux-led"
+	"github.com/usedbytes/battery"
 )
 
 var mainDevRegexp = regexp.MustCompile("Wireless Controller$")
@@ -62,6 +63,7 @@ type Gamepad struct {
 	stopChan chan int
 
 	led led.RGBLED
+	battery battery.Battery
 }
 
 func (g *Gamepad) addSubscriber(s *subscriber) {
@@ -298,6 +300,22 @@ func (g *Gamepad) initLeds() error {
 	return nil
 }
 
+func (g *Gamepad) initBattery() error {
+	psus, err := filepath.Glob(g.sysdir + "/power_supply/*")
+	if err != nil {
+		return err
+	}
+	if len(psus) != 1 {
+		return fmt.Errorf("Wrong number of power_supply-s")
+	}
+	g.battery, err = battery.NewBattery(psus[0])
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func NewGamepad(sysdir string) *Gamepad {
 	log.Printf("Gamepad %s\n", sysdir)
 	g := &Gamepad {
@@ -326,6 +344,12 @@ func NewGamepad(sysdir string) *Gamepad {
 	}
 
 	err = g.initLeds()
+	if err != nil {
+		log.Print(err)
+		return nil
+	}
+
+	err = g.initBattery()
 	if err != nil {
 		log.Print(err)
 		return nil
@@ -367,4 +391,8 @@ func (g *Gamepad) CreateRumbleEffect(strongMag, weakMag float32, duration time.D
 
 func (g *Gamepad) GetLED() led.LinuxLED {
 	return g.led
+}
+
+func (g *Gamepad) GetBattery() battery.Battery {
+	return g.battery
 }
