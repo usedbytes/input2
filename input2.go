@@ -5,22 +5,24 @@ import (
 	"github.com/gvalkov/golang-evdev"
 )
 
+const EvcodeAny = uint16(0xffff)
+
 type RawEvent evdev.InputEvent
 type InputEvent interface{}
 
 type EventMatch struct {
-	TypeMask uint32
-	CodeMap map[uint32][]uint32
+	Type uint16
+	Code uint16
 }
-type FilterFunc func(ev *evdev.InputEvent) (InputEvent, bool)
-type EventFilter struct {
-	Match EventMatch
-	Filter FilterFunc
+type EventFilter func(*evdev.InputEvent, chan<- InputEvent)
+
+type Connection interface{
+	SetFilter(EventMatch, EventFilter)
+	Subscribe(<-chan bool) <-chan InputEvent
 }
 
-type Source interface {
-	Subscribe(stop <-chan bool) <-chan InputEvent
-	AddFilter(filter *EventFilter)
+type Source interface{
+	NewConnection() Connection
 }
 
 type Driver interface {
@@ -30,22 +32,15 @@ type Driver interface {
 	Bind(syspath string) Source
 }
 
-var PassthroughFilter = EventFilter{
-	Match: EventMatch{
-		TypeMask: 0xffffffff,
-		CodeMap:  nil,
-	},
-	Filter: func(ev *evdev.InputEvent) (InputEvent, bool) {
-		return *ev, true
-	},
+var MatchAll = EventMatch{
+	Type: evdev.EV_MAX + 1,
+	Code: EvcodeAny,
 }
 
-var DropAllFilter = EventFilter{
-	Match: EventMatch{
-		TypeMask: 0xffffffff,
-		CodeMap:  nil,
-	},
-	Filter: func(ev *evdev.InputEvent) (InputEvent, bool) {
-		return nil, true
-	},
+func RawPassthrough(ev *evdev.InputEvent, output chan<- InputEvent) {
+	output<-*ev
+}
+
+func Drop(ev *evdev.InputEvent, output chan<- InputEvent) {
+	return
 }

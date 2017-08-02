@@ -18,7 +18,14 @@ import (
 
 var mainDevRegexp = regexp.MustCompile("Wireless Controller$")
 
+type connection struct{
+	id int
+	dev *Gamepad
+	filters map[input2.EventMatch]input2.EventFilter
+}
+
 type subscriber struct {
+	conn *connection
 	id int
 	stop <-chan bool
 	die chan bool
@@ -27,6 +34,7 @@ type subscriber struct {
 
 type Gamepad struct {
 	subid int
+	connid int
 	sysdir string
 	mutex sync.Mutex
 	stopped bool
@@ -151,22 +159,25 @@ func (g *Gamepad) run() {
 		case i := <-g.stopChan:
 			g.removeSubscriber(i)
 		case evs := <-evchan:
-			for _, e := range evs {
-				var ev input2.InputEvent
-				var done bool
-				for _, f := range g.filters {
-					if (f.Match.TypeMask & (1 << uint32(e.Type))) == 0 {
-						continue
+			for _, s := range g.subs {
+				for _, ev := range evs {
+					match := input2.EventMatch{ ev.Type, ev.Code }
+					f, ok := s.conn.filters[match]
+					if !ok {
+						match = input2.EventMatch{ ev.Type, input2.EvcodeAny }
+						f, ok = s.conn.filters[match]
+						if !ok {
+							f, ok = s.conn.filters[input2.MatchAll]
+						}
 					}
-					ev, done = f.Filter(&e)
-					if done {
-						break
+
+					if ok {
+						log.Printf("ev matched\n");
 					}
-				}
-				if ev == nil {
-					continue
-				}
-				for _, s := range g.subs {
+
+					_ = f
+					_ = ok
+
 					// Non-blocking send. Receivers who don't listen
 					// get dropped!
 					select {
@@ -301,28 +312,36 @@ func NewGamepad(sysdir string) *Gamepad {
 	return g
 }
 
-func (g *Gamepad) Subscribe(stop <-chan bool) <-chan input2.InputEvent {
+func (g *Gamepad) NewConnection() input2.Connection {
+	c := connection{
+		id: g.connid,
+		dev: g,
+		filters: make(map[input2.EventMatch]input2.EventFilter),
+	}
+	g.connid += 1
+
+	return &c
+}
+
+// Will replace any existing filter with this match
+// Shouldn't be called with current subscriptions
+func (c *connection) SetFilter(match input2.EventMatch, filter input2.EventFilter) {
+	c.filters[match] = filter
+}
+
+func (c *connection) Subscribe(stop <-chan bool) <-chan input2.InputEvent {
 	s := subscriber{
-		id: g.subid,
+		conn: c,
+		id: c.dev.subid,
 		stop: stop,
 		die: make(chan bool),
 		events: make(chan input2.InputEvent, 10),
 	}
 
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
-	if g.stopped {
-		return nil
-	}
-
-	g.subChan <- &s
-	g.subid++
+	c.dev.subChan <- &s
+	c.dev.subid++
 
 	return s.events
-}
-
-func (g *Gamepad) AddFilter(filter *input2.EventFilter) {
-	g.filters = append(g.filters, filter)
 }
 
 func (g *Gamepad) CreateRumbleEffect(strongMag, weakMag float32, duration time.Duration) (gamepad.RumbleEffect, error) {
