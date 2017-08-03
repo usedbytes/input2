@@ -48,12 +48,12 @@ func (g *Gamepad) initLeds() error {
 	return nil
 }
 
-func (g *Gamepad) GetLED() led.LinuxLED {
-	return g.led
-}
-
 func (g *Gamepad) SetColor(color color.Color) error {
 	return g.led.SetColor(color)
+}
+
+func (g *Gamepad) GetColor() color.Color {
+	return g.led.GetColor()
 }
 
 func (g *Gamepad) SetBrightness(brightness float32) error {

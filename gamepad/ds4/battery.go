@@ -22,10 +22,6 @@ func (g *Gamepad) initBattery() error {
 	return nil
 }
 
-func (g *Gamepad) GetBattery() battery.Battery {
-	return g.battery
-}
-
 func (g *Gamepad) Charge() float32 {
 	return g.battery.Charge()
 }
