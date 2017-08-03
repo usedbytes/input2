@@ -18,18 +18,15 @@ import (
 
 var mainDevRegexp = regexp.MustCompile("Wireless Controller$")
 
+type subscription struct{
+	stop <-chan bool
+	events chan<- []evdev.InputEvent
+}
+
 type connection struct{
 	id int
 	dev *Gamepad
 	filters map[input2.EventMatch]input2.EventFilter
-}
-
-type subscriber struct {
-	conn *connection
-	id int
-	stop <-chan bool
-	die chan bool
-	events chan input2.InputEvent
 }
 
 type Gamepad struct {
@@ -46,9 +43,10 @@ type Gamepad struct {
 	monitorStop chan struct{}
 	monitorChan <-chan *udev.Device
 
-	subs map[int]*subscriber
-	subChan chan *subscriber
+	subs map[int]chan<- []evdev.InputEvent
+	subChan chan *subscription
 	stopChan chan int
+	die chan struct{}
 
 	filters []*input2.EventFilter
 
@@ -56,30 +54,31 @@ type Gamepad struct {
 	battery battery.Battery
 }
 
-func (g *Gamepad) addSubscriber(s *subscriber) {
-	log.Printf("New subscriber: %d\n", s.id)
+func (g *Gamepad) addSubscriber(s *subscription) {
+	id := g.subid
+	g.subid += 1
+	log.Printf("New subscription: %d\n", id)
 
-	g.subs[s.id] = s
-	go func(s *subscriber) {
+	g.subs[id] = s.events
+	go func(stop <-chan bool, id int) {
 		select {
-		case <-s.stop:
-		case <-s.die:
-			g.stopChan <-s.id
+		case <-g.die:
+		case <-stop:
 		}
-	}(s)
+		g.stopChan <-id
+	}(s.stop, id)
 }
 
 func (g *Gamepad) removeSubscriber(id int) {
-	log.Printf("Subscriber %d is done\n", id)
+	log.Printf("Subscription %d is done\n", id)
 
-	s := g.subs[id]
-	if s == nil {
+	evchan := g.subs[id]
+	if evchan == nil {
 		return
 	}
 
 	delete(g.subs, id)
-	close(s.die)
-	close(s.events)
+	close(evchan)
 }
 
 func (g *Gamepad) checkDeviceRemoved(d *udev.Device) bool {
@@ -100,11 +99,7 @@ func (g *Gamepad) stop() {
 	for _ = range g.monitorChan { }
 
 	// Kill off all the subscriber stop threads
-	go func() {
-		for _, s := range g.subs {
-			s.die <-true
-		}
-	}()
+	close(g.die)
 
 	// Remove each subscriber as its stop thread dies
 	for {
@@ -118,10 +113,9 @@ func (g *Gamepad) stop() {
 	close(g.stopChan)
 
 	// Keep closing any incoming subscribers until someone closes the
-	// channel
+	// subChan
 	go func() {
 		for s := range g.subChan {
-			close(s.die)
 			close(s.events)
 		}
 	}()
@@ -160,6 +154,13 @@ func (g *Gamepad) run() {
 			g.removeSubscriber(i)
 		case evs := <-evchan:
 			for _, s := range g.subs {
+				// Non-blocking send. Receivers who don't listen
+				// get dropped!
+				select {
+				case s <- evs:
+				default:
+				}
+				/*
 				for _, ev := range evs {
 					match := input2.EventMatch{ ev.Type, ev.Code }
 					f, ok := s.conn.filters[match]
@@ -178,13 +179,8 @@ func (g *Gamepad) run() {
 					_ = f
 					_ = ok
 
-					// Non-blocking send. Receivers who don't listen
-					// get dropped!
-					select {
-					case s.events <- ev:
-					default:
-					}
 				}
+				*/
 			}
 		case d := <-g.monitorChan:
 			if g.checkDeviceRemoved(d) {
@@ -267,14 +263,35 @@ func (g *Gamepad) initEvdev() error {
 	return fmt.Errorf("Couldn't find event device")
 }
 
+func (g *Gamepad) bleh() error {
+	for ct, cv := range g.evdev.Capabilities {
+		if ct.Type == evdev.EV_ABS {
+			for _, ax := range cv {
+				fmt.Printf("Axis %d %s\n", ax.Code, ax.Name)
+				info, err := g.evdev.GetAbsInfo(ax.Code)
+				if err == nil {
+					fmt.Printf("%#v\n", info)
+				} else {
+					fmt.Println(err)
+				}
+			}
+		} else {
+			fmt.Printf("Skip %s\n", ct.Name)
+		}
+	}
+
+	return nil
+}
+
 func NewGamepad(sysdir string) *Gamepad {
 	log.Printf("Gamepad %s\n", sysdir)
 	g := &Gamepad {
 		subid: 0,
 		sysdir: sysdir,
-		subs: make(map[int]*subscriber),
-		subChan: make(chan *subscriber),
+		subs: make(map[int]chan<- []evdev.InputEvent),
+		subChan: make(chan *subscription),
 		stopChan: make(chan int, 5),
+		die: make(chan struct{}),
 		filters: make([]*input2.EventFilter, 0),
 	}
 
@@ -307,6 +324,8 @@ func NewGamepad(sysdir string) *Gamepad {
 		return nil
 	}
 
+	g.bleh()
+
 	go g.run()
 
 	return g
@@ -329,19 +348,30 @@ func (c *connection) SetFilter(match input2.EventMatch, filter input2.EventFilte
 	c.filters[match] = filter
 }
 
+func (c *connection) run(tx chan<- input2.InputEvent, rx <-chan []evdev.InputEvent) {
+	for evs := range rx {
+		for _, ev := range evs {
+			// Process events
+			tx <-ev
+		}
+	}
+	close(tx)
+}
+
 func (c *connection) Subscribe(stop <-chan bool) <-chan input2.InputEvent {
-	s := subscriber{
-		conn: c,
-		id: c.dev.subid,
-		stop: stop,
-		die: make(chan bool),
-		events: make(chan input2.InputEvent, 10),
+	tx := make(chan input2.InputEvent)
+	rx := make(chan []evdev.InputEvent)
+	go c.run(tx, rx)
+
+	c.dev.mutex.Lock()
+	defer c.dev.mutex.Unlock()
+	if c.dev.stopped {
+		return nil
 	}
 
-	c.dev.subChan <- &s
-	c.dev.subid++
+	c.dev.subChan <- &subscription{ stop, rx }
 
-	return s.events
+	return tx
 }
 
 func (g *Gamepad) CreateRumbleEffect(strongMag, weakMag float32, duration time.Duration) (gamepad.RumbleEffect, error) {
