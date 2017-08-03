@@ -48,8 +48,6 @@ type Gamepad struct {
 	stopChan chan int
 	die chan struct{}
 
-	filters []*input2.EventFilter
-
 	led led.RGBLED
 	battery battery.Battery
 }
@@ -292,7 +290,6 @@ func NewGamepad(sysdir string) *Gamepad {
 		subChan: make(chan *subscription),
 		stopChan: make(chan int, 5),
 		die: make(chan struct{}),
-		filters: make([]*input2.EventFilter, 0),
 	}
 
 	err := g.initUdev()
