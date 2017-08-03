@@ -7,14 +7,15 @@ import (
 
 const EvcodeAny = uint16(0xffff)
 
-type RawEvent evdev.InputEvent
 type InputEvent interface{}
 
 type EventMatch struct {
 	Type uint16
 	Code uint16
 }
-type EventFilter func(*evdev.InputEvent, chan<- InputEvent)
+type EventFilter interface{
+	Filter(evdev.InputEvent, chan<- InputEvent)
+}
 
 type Connection interface{
 	SetFilter(EventMatch, EventFilter)
@@ -37,10 +38,14 @@ var MatchAll = EventMatch{
 	Code: EvcodeAny,
 }
 
-func RawPassthrough(ev *evdev.InputEvent, output chan<- InputEvent) {
-	output<-*ev
+type passthroughFilter struct {}
+var PassthroughFilter passthroughFilter
+func (f passthroughFilter) Filter(ev evdev.InputEvent, tx chan<- InputEvent) {
+	tx<-ev
 }
 
-func Drop(ev *evdev.InputEvent, output chan<- InputEvent) {
+type dropFilter struct {}
+var DropFilter dropFilter
+func (f dropFilter) Filter(ev evdev.InputEvent, tx chan<- InputEvent) {
 	return
 }

@@ -344,8 +344,12 @@ func (c *connection) SetFilter(match input2.EventMatch, filter input2.EventFilte
 func (c *connection) run(tx chan<- input2.InputEvent, rx <-chan []evdev.InputEvent) {
 	for evs := range rx {
 		for _, ev := range evs {
-			// Process events
-			tx <-ev
+			match := input2.EventMatch{ ev.Type, ev.Code }
+			f, ok := c.filters[match]
+			if ok {
+				log.Printf("ev matched\n");
+				f.Filter(ev, tx)
+			}
 		}
 	}
 	close(tx)
