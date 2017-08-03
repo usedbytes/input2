@@ -24,14 +24,12 @@ type subscription struct{
 }
 
 type connection struct{
-	id int
 	dev *Gamepad
 	filters map[input2.EventMatch]input2.EventFilter
 }
 
 type Gamepad struct {
 	subid int
-	connid int
 	sysdir string
 	mutex sync.Mutex
 	stopped bool
@@ -330,11 +328,9 @@ func NewGamepad(sysdir string) *Gamepad {
 
 func (g *Gamepad) NewConnection() input2.Connection {
 	c := connection{
-		id: g.connid,
 		dev: g,
 		filters: make(map[input2.EventMatch]input2.EventFilter),
 	}
-	g.connid += 1
 
 	return &c
 }
