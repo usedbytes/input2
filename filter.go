@@ -15,6 +15,11 @@ type EventFilter interface{
 	Filter(evdev.InputEvent, chan<- InputEvent)
 }
 
+type SyncFilter interface{
+	EventFilter
+	Sync(evdev.InputEvent, chan<- InputEvent)
+}
+
 var MatchAll = EventMatch{
 	Type: evdev.EV_MAX + 1,
 	Code: EvcodeAny,

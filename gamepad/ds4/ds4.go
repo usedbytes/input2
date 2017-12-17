@@ -134,13 +134,21 @@ func (g *Gamepad) runDevice(evchan chan<- []evdev.InputEvent) {
 				panic(fmt.Sprintf("Unexpected error: %s\n", err))
 			}
 		}
+		//fmt.Printf("Read %d evs\n", len(evs))
+		/*
+		select {
+		case evchan <- evs:
+		default:
+			fmt.Printf("Events dropped!!!\n")
+		}
+		*/
 		evchan <- evs
 	}
 }
 
 func (g *Gamepad) run() {
 	log.Printf("Running...\n")
-	evchan := make(chan []evdev.InputEvent, 10)
+	evchan := make(chan []evdev.InputEvent)
 	go g.runDevice(evchan)
 	for {
 		select {
@@ -343,11 +351,21 @@ func (c *connection) SetFilter(match input2.EventMatch, filter input2.EventFilte
 
 func (c *connection) run(tx chan<- input2.InputEvent, rx <-chan []evdev.InputEvent) {
 	for evs := range rx {
+		syncs := make(map[input2.SyncFilter]struct{})
 		for _, ev := range evs {
+			if ev.Code == evdev.EV_SYN {
+				for k, _ := range syncs {
+					k.Sync(ev, tx)
+				}
+				continue
+			}
+
 			match := input2.EventMatch{ ev.Type, ev.Code }
 			f, ok := c.filters[match]
 			if ok {
-				log.Printf("ev matched\n");
+				if sync, ok := f.(input2.SyncFilter); ok {
+					syncs[sync] = struct{}{}
+				}
 				f.Filter(ev, tx)
 			}
 		}
@@ -356,8 +374,8 @@ func (c *connection) run(tx chan<- input2.InputEvent, rx <-chan []evdev.InputEve
 }
 
 func (c *connection) Subscribe(stop <-chan bool) <-chan input2.InputEvent {
-	tx := make(chan input2.InputEvent)
-	rx := make(chan []evdev.InputEvent)
+	tx := make(chan input2.InputEvent, 10)
+	rx := make(chan []evdev.InputEvent, 10)
 	go c.run(tx, rx)
 
 	c.dev.mutex.Lock()
