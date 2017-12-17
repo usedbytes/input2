@@ -353,7 +353,7 @@ func (c *connection) run(tx chan<- input2.InputEvent, rx <-chan []evdev.InputEve
 	for evs := range rx {
 		syncs := make(map[input2.SyncFilter]struct{})
 		for _, ev := range evs {
-			if ev.Code == evdev.EV_SYN {
+			if ev.Type == evdev.EV_SYN {
 				for k, _ := range syncs {
 					k.Sync(ev, tx)
 				}
