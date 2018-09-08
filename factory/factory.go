@@ -26,6 +26,9 @@ func monitorDevices(u *udev.Udev, deviceChan <-chan *udev.Device, sourceChan cha
 	for {
 		select {
 		case d := <-deviceChan:
+			if d == nil {
+				continue
+			}
 			switch d.Action() {
 			case "add", "":
 				s := bindDevice(d)
