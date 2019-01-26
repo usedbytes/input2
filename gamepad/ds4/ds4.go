@@ -361,8 +361,12 @@ func (c *connection) run(tx chan<- input2.InputEvent, rx <-chan []evdev.InputEve
 			}
 
 			match := input2.EventMatch{ ev.Type, ev.Code }
-			f, ok := c.filters[match]
-			if ok {
+			if f, ok := c.filters[match]; ok {
+				if sync, ok := f.(input2.SyncFilter); ok {
+					syncs[sync] = struct{}{}
+				}
+				f.Filter(ev, tx)
+			} else if f, ok := c.filters[input2.MatchAll]; ok {
 				if sync, ok := f.(input2.SyncFilter); ok {
 					syncs[sync] = struct{}{}
 				}
