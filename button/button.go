@@ -14,6 +14,8 @@ type Event struct {
 const (
 	Pressed Value = iota
 	Held
+	Down
+	Up
 )
 
 type Button struct {
@@ -29,13 +31,18 @@ func (b *Button) Filter(ev evdev.InputEvent, tx chan<- input2.InputEvent) {
 		case 0:
 			if b.timer != nil && !b.timer.Stop() {
 				// We already sent a "held" event
+				tx <- Event{ b.Keycode, Up }
 				return
 			}
 			tx <- Event{ b.Keycode, Pressed }
 		case 1:
-			b.timer = time.AfterFunc(b.HoldTime, func() {
-				tx <- Event{ b.Keycode, Held }
-			})
+			tx <- Event{ b.Keycode, Down }
+
+			if b.HoldTime != 0 {
+				b.timer = time.AfterFunc(b.HoldTime, func() {
+					tx <- Event{ b.Keycode, Held }
+				})
+			}
 	}
 }
 
